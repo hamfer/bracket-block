@@ -8,25 +8,13 @@ import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.markup.RangeHighlighter
 
 class BracketBlockCaretListener(private val editor: Editor) : CaretListener, Disposable {
-    private val highlighterList: ArrayList<RangeHighlighter> = ArrayList()
-
-    init {
-        editor.caretModel.addCaretListener(this)
-    }
-
+    private val highlighters = ArrayList<RangeHighlighter>()
+    init { editor.caretModel.addCaretListener(this) }
     override fun caretPositionChanged(event: CaretEvent) {
-        highlightBracketBlock(event.editor)
+        val highlighter = BracketBlockHighlighter(event.editor)
+        highlighter.clearHighlight(highlighters)
+        highlighters.clear()
+        highlighters += highlighter.highlightBracketBlock(highlighter.findClosetBracePair(event.editor.caretModel.offset))
     }
-
-    private fun highlightBracketBlock(editor: Editor) {
-        val offset = editor.caretModel.offset
-        val highlighter = BracketBlockHighlighter(editor)
-        val bracePair = highlighter.findClosetBracePair(offset)
-        highlighter.clearHighlight(highlighterList)
-        highlighter.highlightBracketBlock(bracePair)?.let { highlighterList.add(it) }
-    }
-
-    override fun dispose() {
-        editor.caretModel.removeCaretListener(this)
-    }
+    override fun dispose() { editor.caretModel.removeCaretListener(this); highlighters.clear() }
 }

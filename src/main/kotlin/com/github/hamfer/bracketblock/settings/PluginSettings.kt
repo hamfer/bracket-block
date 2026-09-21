@@ -8,40 +8,16 @@ import com.intellij.openapi.components.Storage
 import java.awt.Color
 
 @Service
-@State(
-    name = "BracketBlockSetting", storages = [Storage("bracket-block.xml")]
-
-)
+@State(name = "BracketBlockSetting", storages = [Storage("bracket-block.xml")])
 class PluginSettings private constructor() : PersistentStateComponent<PluginSettingsState> {
-    companion object {
-        fun getInstance(): PluginSettings {
-            return ApplicationManager.getApplication().getService(PluginSettings::class.java)
-        }
-    }
-
+    companion object { fun getInstance(): PluginSettings = ApplicationManager.getApplication().getService(PluginSettings::class.java) }
     private var state = PluginSettingsState()
-
-    override fun getState(): PluginSettingsState {
-        return this.state
-    }
-
-    override fun loadState(state: PluginSettingsState) {
-        this.state = state
-    }
-
-    fun setBorderColor(color: Color) {
-        setBorderColor(color.rgb)
-    }
-
-    fun setBorderColor(color: Int) {
-        getState().borderColor = color
-    }
-
-    fun getBorderColor(): Color {
-        return Color(
-            (getState().borderColor shr 16) and 0xFF,
-            (getState().borderColor shr 8) and 0xFF,
-            getState().borderColor and 0xFF
-        )
-    }
+    override fun getState() = state
+    override fun loadState(state: PluginSettingsState) { this.state = state }
+    fun setBorderColor(color: Color) { state.borderColor = color.rgb }
+    fun getBorderColor() = Color((state.borderColor shr 16) and 0xFF, (state.borderColor shr 8) and 0xFF, state.borderColor and 0xFF)
+    fun isHighlightScope() = state.highlightScope
+    fun isHighlightBrackets() = state.highlightBrackets
+    fun configurations(): List<LanguageConfiguration> = state.languageConfigurations
+    fun configurationFor(languageId: String): LanguageConfiguration? = configurations().firstOrNull { it.languageId.equals(languageId, true) }
 }
