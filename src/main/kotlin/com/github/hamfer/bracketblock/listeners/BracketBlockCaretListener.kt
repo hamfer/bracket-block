@@ -21,9 +21,10 @@ class BracketBlockCaretListener(private val editor: Editor) : CaretListener, Dis
     private fun highlightBracketBlock(editor: Editor) {
         val offset = editor.caretModel.offset
         val highlighter = BracketBlockHighlighter(editor)
-        val bracePair = highlighter.findClosetBracePair(offset)
+        val range = highlighter.findClosetBracePairOrScope(offset)
         highlighter.clearHighlight(highlighterList)
-        highlighter.highlightBracketBlock(bracePair)?.let { highlighterList.add(it) }
+        highlighterList.clear()
+        highlighter.highlightScope(range)?.let { highlighterList.add(it) }
     }
 
     override fun dispose() {

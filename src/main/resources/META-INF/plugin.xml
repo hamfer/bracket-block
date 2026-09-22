@@ -5,11 +5,13 @@
     <vendor>Ilham Ferdian Rudianata</vendor>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <editorFactoryListener
                 implementation="com.github.hamfer.bracketblock.listeners.BracketBlockEditorFactoryListener"/>
-        <applicationConfigurable instance="com.github.hamfer.bracketblock.settings.PluginSettingsConfigurable" displayName="Bracket Block"/>
+        <applicationConfigurable instance="com.github.hamfer.bracketblock.settings.PluginSettingsConfigurable"
+                                 displayName="Bracket Block"/>
         <applicationService serviceImplementation="com.github.hamfer.bracketblock.settings.PluginSettings"/>
     </extensions>
 </idea-plugin>

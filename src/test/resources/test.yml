@@ -1,0 +1,11 @@
+test:
+  test1:
+    - 123
+    - 321
+  test2:
+    - test3: value
+      key1: value2
+    - test3: value3
+      key1: value4
+tested:
+  test4: value{testing2}

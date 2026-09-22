@@ -3,6 +3,7 @@ package com.github.hamfer.bracketblock.highlighter
 import com.github.hamfer.bracketblock.adapter.BraceMatchingUtilAdapter
 import com.github.hamfer.bracketblock.brace.BracePair
 import com.github.hamfer.bracketblock.brace.BraceTokenTypes
+import com.github.hamfer.bracketblock.highlighter.lang.LanguageHighlighterRegistry
 import com.github.hamfer.bracketblock.settings.PluginSettings
 import com.intellij.lang.Language
 import com.intellij.lang.LanguageBraceMatching
@@ -19,7 +20,7 @@ import java.util.*
 class BracketBlockHighlighter(private val editor: Editor) {
     private var languageBracePairs: HashMap<String, List<Pair<IElementType, IElementType>>> = HashMap()
 
-    private var psiFile: PsiFile?
+    private val psiFile: PsiFile?
 
     private var pluginSettings: PluginSettings = PluginSettings.getInstance()
 
@@ -42,30 +43,110 @@ class BracketBlockHighlighter(private val editor: Editor) {
         }
     }
 
+    /**
+     * Main entry point: finds the closest scope around the given offset.
+     * Uses per-language highlighter when available, otherwise falls back to manual detection.
+     */
+    fun findClosetBracePairOrScope(offset: Int): HighlightRange? {
+        // Try per-language PSI-based detection first
+        if (psiFile != null) {
+            if (offset <= 0 || offset >= psiFile.textLength) {
+                return null
+            }
+
+            val langHighlighter = LanguageHighlighterRegistry.getFor(psiFile.language)
+            if (langHighlighter != null) {
+                if (!langHighlighter.isAvailable()) {
+                    return null
+                }
+                val range = langHighlighter.detect(editor, psiFile, offset)
+                if (range != null) return range
+            }
+        }
+
+        // Fallback to manual bracket detection
+        val bracePair = findClosetBracePair(offset)
+        if (bracePair != null) {
+            return HighlightRange(
+                startOffset = bracePair.leftBrace.offset,
+                endOffset = bracePair.rightBrace.offset,
+                bracketStartOffset = bracePair.leftBrace.offset,
+                bracketEndOffset = bracePair.rightBrace.offset
+            )
+        }
+
+        return null
+    }
+
+    fun findClosetBracePair(offset: Int): BracePair? {
+        val braceTokenBracePair: BracePair? = this.findClosetBracePairInBraceTokens(offset)
+        val stringSymbolBracePair: BracePair? = this.findClosetBracePairInStringSymbols(offset)
+        return if (braceTokenBracePair != null && stringSymbolBracePair != null) {
+            if (offset - braceTokenBracePair.leftBrace.offset > offset - stringSymbolBracePair.leftBrace.offset && offset - braceTokenBracePair.rightBrace.offset < offset - stringSymbolBracePair.rightBrace.offset) {
+                stringSymbolBracePair
+            } else {
+                braceTokenBracePair
+            }
+        } else {
+            Optional.ofNullable(braceTokenBracePair).orElse(stringSymbolBracePair)
+        }
+    }
+
+    /**
+     * Highlights a scope range with the configured border color.
+     */
+    fun highlightScope(range: HighlightRange?): RangeHighlighter? {
+        if (range == null) return null
+        // Skip when brackets are on the same line if disabled in settings
+        val doc = editor.document
+        val startLine = doc.getLineNumber(range.startOffset)
+        val endLine = doc.getLineNumber(range.endOffset.coerceAtMost(doc.textLength))
+        if (pluginSettings.isOnlyHighlightWhenDiferrentLine() && startLine == endLine) return null
+
+        val textAttribute = TextAttributes(
+            /* foreground */ null,
+            /* background */ pluginSettings.getBackgroundColor(),
+            /* effect border */ pluginSettings.getBorderColor(),
+            EffectType.ROUNDED_BOX,
+            Font.PLAIN
+        )
+        return editor.markupModel.addRangeHighlighter(
+            range.startOffset,
+            range.endOffset,
+            HighlighterLayer.ELEMENT_UNDER_CARET + BracketBlockConstant.HIGHLIGHT_LAYER_WEIGHT,
+            textAttribute,
+            HighlighterTargetArea.EXACT_RANGE
+        )
+    }
+
+    fun clearHighlight(highlighterList: List<RangeHighlighter>) {
+        highlighterList.forEach { editor.markupModel.removeHighlighter(it) }
+    }
+
     private fun findClosetBracePairInBraceTokens(offset: Int): BracePair? {
         val editorHighlighter = (editor as EditorEx).highlighter
         val isBlockCaret = this.isBlockCaret()
         val braceTokens: List<Pair<IElementType, IElementType>>? = getSupportedBraceToken()
         if (braceTokens != null) {
-            for (braceTokenPair in braceTokens) {
+            for ((first, second) in braceTokens) {
                 val leftTraverseIterator = editorHighlighter.createIterator(offset)
                 val rightTraverseIterator = editorHighlighter.createIterator(offset)
                 val leftBraceOffset: Int = BraceMatchingUtilAdapter.findLeftLParen(
                     leftTraverseIterator,
-                    braceTokenPair.first,
+                    first,
                     editor.document.immutableCharSequence,
                     psiFile?.fileType,
                     isBlockCaret
                 )
                 val rightBraceOffset: Int = BraceMatchingUtilAdapter.findRightRParen(
                     rightTraverseIterator,
-                    braceTokenPair.second,
+                    second,
                     editor.document.immutableCharSequence,
                     psiFile?.fileType,
                     isBlockCaret
                 )
                 if (leftBraceOffset != BracketBlockConstant.NON_OFFSET && rightBraceOffset != BracketBlockConstant.NON_OFFSET) {
-                    return BracePair.BracePairBuilder().leftType(braceTokenPair.first).rightType(braceTokenPair.second)
+                    return BracePair.BracePairBuilder().leftType(first).rightType(second)
                         .leftOffset(leftBraceOffset).rightOffset(rightBraceOffset).build()
                 }
             }
@@ -85,41 +166,6 @@ class BracketBlockHighlighter(private val editor: Editor) {
         return if (!isBlockCaret && leftOffset == offset) null else BracePair.BracePairBuilder()
             .leftType(BraceTokenTypes.DOUBLE_QUOTE).rightType(BraceTokenTypes.DOUBLE_QUOTE).leftOffset(leftOffset)
             .rightOffset(rightOffset).build()
-    }
-
-    fun findClosetBracePair(offset: Int): BracePair? {
-        val braceTokenBracePair: BracePair? = this.findClosetBracePairInBraceTokens(offset)
-        val stringSymbolBracePair: BracePair? = this.findClosetBracePairInStringSymbols(offset)
-        return if (braceTokenBracePair != null && stringSymbolBracePair != null) {
-            if (offset - braceTokenBracePair.leftBrace.offset > offset - stringSymbolBracePair.leftBrace.offset && offset - braceTokenBracePair.rightBrace.offset < offset - stringSymbolBracePair.rightBrace.offset) {
-                stringSymbolBracePair
-            } else {
-                braceTokenBracePair
-            }
-        } else {
-            Optional.ofNullable(braceTokenBracePair).orElse(stringSymbolBracePair)
-        }
-    }
-
-    fun highlightBracketBlock(bracePair: BracePair?): RangeHighlighter? {
-        return if (bracePair != null) {
-            val textAttribute = TextAttributes(
-                null, null, pluginSettings.getBorderColor(), EffectType.ROUNDED_BOX, Font.PLAIN
-            )
-            editor.markupModel.addRangeHighlighter(
-                bracePair.leftBrace.offset,
-                bracePair.rightBrace.offset,
-                HighlighterLayer.SELECTION + BracketBlockConstant.HIGHLIGHT_LAYER_WEIGHT,
-                textAttribute,
-                HighlighterTargetArea.EXACT_RANGE
-            )
-        } else {
-            null
-        }
-    }
-
-    fun clearHighlight(highlighterList: List<RangeHighlighter>) {
-        highlighterList.forEach { editor.markupModel.removeHighlighter(it) }
     }
 
     private fun getSupportedBraceToken(): List<Pair<IElementType, IElementType>>? {
